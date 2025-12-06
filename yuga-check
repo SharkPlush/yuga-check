@@ -53,8 +53,8 @@ issue7() {
     # Solution: Mask systemd-growfs-root.service
     if ! [ -L /etc/systemd/system/systemd-growfs-root.service ]; then
         echo 'issue7 detected - systemd-growfs-root.service not masked - correcting'
-	  systemctl mask systemd-growfs-root.service
-    	echo 'issue7 corrected'
+	systemctl mask systemd-growfs-root.service
+    echo 'issue7 corrected'
     fi
 }
 
