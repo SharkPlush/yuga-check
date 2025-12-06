@@ -10,42 +10,6 @@ exec 3>&1 4>&2
 trap 'exec 2>&4 1>&3' 0 1 2 3
 exec 1>>/var/log/yuga-check.log 2>&1
 
-boo1228416() {
-    # Problem: boo1228416. TPM2 using pcr hashes not pcrlock
-    # Solution: Configure and enrol pcrlock for FDE
-
-    # Determine root device
-    rootdev=/dev/$(dmsetup deps -o devname /dev/mapper/yuga_root | cut -d '(' -f2 | cut -d ')' -f1)
-    # Check for failure conditions
-    tpm2hashpcrs=$(cryptsetup luksDump ${rootdev} | grep 'tpm2-hash-pcrs:' | tr -d ' \t' | cut -d ':' -f2)
-    tpm2pcrlock=$(cryptsetup luksDump ${rootdev} | grep 'tpm2-pcrlock:' | tr -d ' \t' | cut -d ':' -f2)
-    # For boo1228416 to be an issue hashpcrs must be 7 and pcrlock must be false. Be paranoid, only match on both
-    if [ "${tpm2hashpcrs}" == "7" ] && [ "${tpm2pcrlock}" == "false" ]; then
-        echo "boo1228416 detected - TPM2 using pcr hashes not pcrlock - correcting"
-
-        # Need a keyfile to avoid requesting the recovery key when re-enrolling
-        keyfile=$(mktemp /tmp/yuga-check.XXXXXXXXXX)
-        dd bs=512 count=4 if=/dev/urandom of=${keyfile} iflag=fullblock
-        chmod 400 ${keyfile}
-
-        # Should be slot 2, but better to check and be sure
-        tpm2slot=$(systemd-cryptenroll ${rootdev} | grep tpm2 | xargs | cut -d ' ' -f1)
-
-        # Writing keyfile to slot 31 (end of the LUKS2 space) to avoid clashes with any customisation/extra keys
-        cryptsetup luksAddKey --token-only --batch-mode --new-key-slot=31 ${rootdev} ${keyfile}
-
-        # Drop existing enrollment and re enroll
-        systemd-cryptenroll --wipe-slot=${tpm2slot} ${rootdev}
-        systemd-cryptenroll --unlock-key-file=${keyfile} --tpm2-device=auto ${rootdev}
-
-        # Wipe out keyfile and keyfile keyslot
-        systemd-cryptenroll --wipe-slot=31 ${rootdev}
-        rm ${keyfile}
-
-        echo "boo1228416 corrected"
-    fi
-}
-
 boo1234234() {
     # Problem: boo1234234 and related bugs. TPM2 enrolments failing because PCR0 invalidated by firmware updates.
     # Solution: Stop measuring PCR0 and update-predictions with the reduced PCR list
@@ -84,10 +48,34 @@ boo1246605() {
     fi
 }
 
+issue7() {
+    # Problem: Yuga should have systemd-growfs-root.service masked as it tries to run when it shouldn't
+    # Solution: Mask systemd-growfs-root.service
+    if ! [ -L /etc/systemd/system/systemd-growfs-root.service ]; then
+        echo 'issue7 detected - systemd-growfs-root.service not masked - correcting'
+	  systemctl mask systemd-growfs-root.service
+    	echo 'issue7 corrected'
+    fi
+}
+
+#issue6() {
+#    # Problem: Yuga should have 'tpm2-measure-pcr=yes' set in /etc/crypttab if using normal encryption mode
+#    # Solution: add tpm2-measure-pcr=yes if tpm2-device=auto is set
+#    if grep '^yuga_root' /etc/crypttab | grep -qF 'tpm2-device=auto'; then
+#	       # Default Mode detected, now search for missing config
+#	       if ! grep '^yuga_root' /etc/crypttab | grep -qF 'tpm2-measure-pcr=yes'; then
+#                echo 'issue6 detected  - tpm2-measure-pcr=yes not set - correcting'
+#                sed -i '/^yuga_root/ s/$/,tpm2-measure-pcr=yes/' /etc/crypttab
+#                sdbootutil mkinitrd
+#                echo 'issue6 corrected'
+#	       fi
+#    fi
+#}
+
+
 # Active fixes executed in order of importance
 boo1246605
 boo1243182
 boo1234234
-
-# Deprecated fixes likely to be dropped in future Yuga-check releases
-boo1228416
+issue7
+#issue6
