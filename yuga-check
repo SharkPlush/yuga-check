@@ -72,7 +72,6 @@ issue7() {
 #    fi
 #}
 
-
 # Active fixes executed in order of importance
 boo1246605
 boo1243182
